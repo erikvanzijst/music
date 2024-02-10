@@ -1,28 +1,54 @@
 import os
 import sys
 import time
-import pandas as pd
+import sqlite3
 from subprocess import Popen, PIPE
-from typing import List
 from urllib.parse import urlencode, urlparse, urlunparse, quote
 
 import requests
 import streamlit as st
 from streamlit_searchbox import st_searchbox
 
-
+DB = 'music.db'
 st.set_page_config(layout="wide", page_title="Music search")
-root = '../../nuc/Music' if not sys.argv[1:] else sys.argv[1]
+root = '../../nuc/Music/spring2007' if not sys.argv[1:] else sys.argv[1]
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def is_warm() -> float:
+    return time.time()
+
+
+def index(root: str) -> None:
+    cnt = 0
+    bar = st.progress(0, f'Crawling files {root}')
+    files = list(os.walk(root))
+    total = sum(1 for dirp, dirnames, filenames in files for _ in filenames)
+
+    with sqlite3.connect(DB) as conn:
+        conn.execute('CREATE VIRTUAL TABLE if not exists songs USING fts5(name, path)')
+        existing = {row[0] for row in conn.execute('select path from songs')}
+
+        for dirp, dirnames, filenames in files:
+            cnt += len(filenames)
+            bar.progress(cnt / total, f'Indexing {root}')
+            for filename, p in [(fn, os.path.join(dirp, fn)) for fn in filenames]:
+                if p not in existing:
+                    conn.execute('insert into songs (name, path) values (?, ?)', (filename, os.path.join(dirp, filename)))
+                existing.discard(p)
+        if existing:
+            bar.progress(1.0, f'Dropping {len(existing)} removed songs...')
+            conn.executemany('delete from songs where path = ?', [(p,) for p in existing])
+        bar.empty()
+
 
 st.markdown("""
     <style>
         .reportview-container {
             margin-top: -2em;
         }
-        #MainMenu {visibility: hidden;}
         .stDeployButton {display:none;}
         footer {visibility: hidden;}
-        #stDecoration {display:none;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -48,37 +74,26 @@ def play(fn: str):
                          {'command': 'in_play', 'input': fn} if fn else {'command': 'pl_stop'},
                          quote_via=quote)))
     requests.get(url).raise_for_status()
-    
+
 
 if 'song' not in st.session_state:
     st.session_state['song'] = None
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_library(root: str) -> pd.DataFrame:
-    df = pd.DataFrame(columns=['Name', 'Path'])
-    
-    for dirp, dirnames, filenames in os.walk(root):
-        df_ = pd.DataFrame.from_dict({'Path': [os.path.join(dirp, fn) for fn in filenames],
-                                      'Name': filenames})
-        df = pd.concat([df, df_])
-    return df
-
-f"""
-# Music search
-"""
+st.markdown('# Music search')
 ensure_vlc()
 
-with st.spinner(f'Indexing {root}'):
-    library = get_library(root)
+with sqlite3.connect(DB) as conn:
+    if time.time() - is_warm() < .05:
+        index(root)
+    count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
-def search(searchterm: str):
-    return list(library[library['Name'].str.contains(searchterm, case=False)].itertuples(index=False, name=None))
+    def fts(term: str):
+        return conn.execute('select name, path from songs where path match ? ORDER BY rank',
+                            (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
 
-
-if (selected_value := st_searchbox(search, key="searchbox", label=f'{len(library)} songs in {root}')) != st.session_state.song:
-    ensure_vlc()
-    play(selected_value)
-    st.session_state.song = selected_value
+    if (selected_value := st_searchbox(fts, key="searchbox", label=f'{count} songs in {root}')) != st.session_state.song:
+        play(selected_value)
+        st.session_state.song = selected_value
 
 st.markdown(f'<iframe src="http://:password@localhost:9000" style="width: 100%; overflow: hidden"></iframe>', unsafe_allow_html=True)
