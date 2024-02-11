@@ -25,7 +25,7 @@ def index(root: str) -> None:
     cnt = 0
     bar = st.progress(0, f'Crawling files {root}')
     files = list(os.walk(root))
-    total = sum(1 for dirp, dirnames, filenames in files for _ in filenames)
+    total = sum(len(filenames) for _, _, filenames in files)
 
     with sqlite3.connect(DB) as conn:
         conn.execute('CREATE VIRTUAL TABLE if not exists songs USING fts5(name, path)')
@@ -63,7 +63,7 @@ def ensure_vlc():
         pass
     if status != 200:
         with st.spinner('Starting VLC..'):
-            p = Popen(['vlc', '--intf=http', '--http-port','9000', '--http-password=password'], cwd=os.getcwd(), stdin=PIPE)
+            p = Popen(['vlc', '--intf=http', '--http-port', '9000', '--http-password=password'], cwd=os.getcwd(), stdin=PIPE)
             p.stdin.close()
             time.sleep(1)
 
@@ -73,7 +73,7 @@ def play(fn: str):
     # https://wiki.videolan.org/VLC_HTTP_requests/
     url = urlunparse(urlparse('http://:password@localhost:9000/requests/status.xml')
                      ._replace(query=urlencode(
-                         {'command': 'in_play', 'input': fn} if fn else {'command': 'pl_stop'},
+                         {'command': 'in_play', 'input': fn} if fn else {'command': 'pl_pause'},
                          quote_via=quote)))
     requests.get(url).raise_for_status()
 
@@ -121,14 +121,14 @@ def download():
         info.empty()
         st.session_state.dl_log = ''
         with TemporaryDirectory() as tmpdir:
-            proc = Popen(['yt-dlp', '--extract-audio', '--format', 'bestaudio', '-x', '--audio-format', 'mp3', url],
-                         cwd=tmpdir, stdin=PIPE, stdout=PIPE)
+            proc = Popen(['yt-dlp', '--extract-audio', '--format', 'bestaudio', '-x', '-o', '%(title)s',
+                          '--audio-format', 'mp3', url], cwd=tmpdir, stdin=PIPE, stdout=PIPE)
             try:
                 proc.stdin.close()
                 stdout: str = ''
                 with placeholder.container():
                     with st.spinner():
-                        while line := proc.stdout.readline().decode('UTF-8'):
+                        while line := proc.stdout.readline().replace(b'\r', b'\n').decode('UTF-8'):
                             log.text(stdout := (stdout + line))
             finally:
                 with info:
