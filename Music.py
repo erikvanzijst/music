@@ -104,8 +104,6 @@ def player():
 
 
 def download():
-    # st.markdown('# Download songs')
-
     if 'url' not in st.session_state:
         st.session_state['url'] = None
     if 'dl_log' not in st.session_state:
