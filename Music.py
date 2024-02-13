@@ -29,6 +29,7 @@ def index(root: str) -> None:
 
     with sqlite3.connect(DB) as conn:
         conn.execute('CREATE VIRTUAL TABLE if not exists songs USING fts5(name, path)')
+        conn.execute('CREATE TABLE if not exists played (path varchar, at datetime default current_timestamp)')
         existing = {row[0] for row in conn.execute('select path from songs')}
 
         for dirp, dirnames, filenames in files:
@@ -68,14 +69,16 @@ def ensure_vlc():
             time.sleep(1)
 
 
-def play(fn: str):
+def play(path: str):
     ensure_vlc()
     # https://wiki.videolan.org/VLC_HTTP_requests/
     url = urlunparse(urlparse('http://:password@localhost:9000/requests/status.xml')
                      ._replace(query=urlencode(
-                         {'command': 'in_play', 'input': fn} if fn else {'command': 'pl_pause'},
+                         {'command': 'in_play', 'input': path} if path else {'command': 'pl_pause'},
                          quote_via=quote)))
     requests.get(url).raise_for_status()
+    with sqlite3.connect(DB) as conn:
+        conn.execute('insert into played (path) values (?)', (path,))
 
 
 def player():
@@ -83,7 +86,6 @@ def player():
         st.session_state['song'] = None
 
     st.markdown('# Music search')
-    ensure_vlc()
 
     with sqlite3.connect(DB) as conn:
         if time.time() - is_warm() < .05:
