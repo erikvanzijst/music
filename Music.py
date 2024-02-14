@@ -3,10 +3,11 @@ import shutil
 import sys
 import time
 import sqlite3
+from io import BytesIO
 from subprocess import Popen, PIPE
 from tempfile import TemporaryDirectory
-from urllib.parse import urlencode, urlparse, urlunparse, quote
 
+import pygame
 import requests
 import streamlit as st
 from streamlit_searchbox import st_searchbox
@@ -14,6 +15,31 @@ from streamlit_searchbox import st_searchbox
 DB = 'music.db'
 st.set_page_config(layout="wide", page_title="Music search")
 root = '../../nuc/Music/spring2007' if not sys.argv[1:] else sys.argv[1]
+
+
+class FWrapper(object):
+    def __init__(self, path: str):
+        self.path = path
+        self.fobj = open(path, 'rb')
+        self.type = 0
+
+    def close(self):
+        return self.fobj.close()
+
+    def seekable(self):
+        return True
+
+    def seek(self, pos):
+        return self.fobj.seek(pos)
+
+    def size(self):
+        return os.fstat(self.fobj.fileno()).st_size
+
+    def read(self, num):
+        return self.fobj.read(num)
+
+    def write(self, buf):
+        raise NotImplemented('write')
 
 
 @st.cache_data(show_spinner=False)
@@ -70,15 +96,13 @@ def ensure_vlc():
 
 
 def play(path: str):
-    ensure_vlc()
-    # https://wiki.videolan.org/VLC_HTTP_requests/
-    url = urlunparse(urlparse('http://:password@localhost:9000/requests/status.xml')
-                     ._replace(query=urlencode(
-                         {'command': 'in_play', 'input': path} if path else {'command': 'pl_pause'},
-                         quote_via=quote)))
-    requests.get(url).raise_for_status()
-    with sqlite3.connect(DB) as conn:
-        conn.execute('insert into played (path) values (?)', (path,))
+    if path:
+        pygame.mixer.music.load(FWrapper(path))
+        pygame.mixer.music.play()
+        with sqlite3.connect(DB) as conn:
+            conn.execute('insert into played (path) values (?)', (path,))
+    else:
+        pygame.mixer.music.stop()
 
 
 def player():
@@ -88,8 +112,8 @@ def player():
     st.markdown('# Music search')
 
     with sqlite3.connect(DB) as conn:
-        if time.time() - is_warm() < .05:
-            index(root)
+        # if time.time() - is_warm() < .05:
+        #     index(root)
         count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
         def fts(term: str):
@@ -150,5 +174,7 @@ page_names_to_funcs = {
     "Download": download,
 }
 
-selected_page = st.sidebar.selectbox('', options=page_names_to_funcs.keys())
+selected_page = st.sidebar.selectbox(' ', options=page_names_to_funcs.keys())
 page_names_to_funcs[selected_page]()
+pygame.mixer.pre_init(buffer=4096)
+pygame.mixer.init(buffer=4096)
