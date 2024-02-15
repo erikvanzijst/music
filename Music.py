@@ -61,12 +61,12 @@ def ensure_vlc():
     try:
         status = requests.get('http://:password@localhost:9000/requests/status.xml').status_code
     except IOError:
-        pass
+        print('vlc not running...')
     if status != 200:
-        with st.spinner('Starting VLC..'):
-            p = Popen(['vlc', '--intf=http', '--http-port', '9000', '--http-password=password'], cwd=os.getcwd(), stdin=PIPE)
-            p.stdin.close()
-            time.sleep(1)
+        print('Starting VLC..')
+        p = Popen(['vlc', '--intf=http', '--http-port', '9000', '--http-password=password'], cwd=os.getcwd(), stdin=PIPE)
+        p.stdin.close()
+        time.sleep(1)
 
 
 def play(path: str):
@@ -84,8 +84,6 @@ def play(path: str):
 def player():
     if 'song' not in st.session_state:
         st.session_state['song'] = None
-
-    st.markdown('# Music search')
 
     with sqlite3.connect(DB) as conn:
         if time.time() - is_warm() < .05:
@@ -140,15 +138,16 @@ def download():
                             for fn in os.listdir(tmpdir):
                                 dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(root, 'youtube'))
                                 conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
-                        st.success(f'Song downloaded successfully and added to library!')
+                        st.success(f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} "
+                                   f"downloaded successfully and added to library!")
 
         st.session_state.url = url
 
 
-page_names_to_funcs = {
+pages = {
     "Player": player,
     "Download": download,
 }
 
-selected_page = st.sidebar.selectbox('', options=page_names_to_funcs.keys())
-page_names_to_funcs[selected_page]()
+selected_page = st.sidebar.selectbox(' ', options=pages.keys())
+pages[selected_page]()
