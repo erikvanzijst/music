@@ -11,6 +11,7 @@ Babel==2.14.0
 beautifulsoup4==4.12.3
 bleach==6.1.0
 blinker==1.7.0
+Brotli==1.1.0
 cachetools==5.3.2
 certifi==2024.2.2
 cffi==1.16.0
@@ -76,6 +77,7 @@ ptyprocess==0.7.0
 pure-eval==0.2.2
 pyarrow==15.0.0
 pycparser==2.21
+pycryptodomex==3.20.0
 pydeck==0.8.1b0
 Pygments==2.17.2
 python-dateutil==2.8.2
@@ -97,6 +99,7 @@ soupsieve==2.5
 stack-data==0.6.3
 streamlit==1.31.0
 streamlit-autorefresh==1.0.1
+streamlit-javascript==0.1.5
 streamlit-searchbox==0.1.7
 tenacity==8.2.3
 terminado==0.18.0
@@ -117,5 +120,6 @@ wcwidth==0.2.13
 webcolors==1.13
 webencodings==0.5.1
 websocket-client==1.7.0
+websockets==12.0
 yt-dlp==2023.12.30
 zipp==3.17.0

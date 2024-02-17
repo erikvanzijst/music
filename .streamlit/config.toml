@@ -1,0 +1,8 @@
+# https://docs.streamlit.io/library/advanced-features/configuration
+[server]
+port = 8001
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false

@@ -3,17 +3,19 @@ import shutil
 import sys
 import time
 import sqlite3
+from pathlib import Path
 from subprocess import Popen, PIPE
 from tempfile import TemporaryDirectory
-from urllib.parse import urlencode, urlparse, urlunparse, quote
+from urllib.parse import urlparse, urlunparse, quote
 
-import requests
 import streamlit as st
+from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
 
 DB = 'music.db'
 st.set_page_config(layout="wide", page_title="Music search")
-root = '../../nuc/Music/spring2007' if not sys.argv[1:] else sys.argv[1]
+fs_root = '.' if not sys.argv[1:] else sys.argv[1]
+base_url = urlparse(st_javascript("await fetch('').then(r => window.parent.location.href)"))._replace(path='')
 
 
 @st.cache_data(show_spinner=False)
@@ -28,14 +30,14 @@ def index(root: str) -> None:
     total = sum(len(filenames) for _, _, filenames in files)
 
     with sqlite3.connect(DB) as conn:
-        conn.execute('CREATE VIRTUAL TABLE if not exists songs USING fts5(name, path)')
-        conn.execute('CREATE TABLE if not exists played (path varchar, at datetime default current_timestamp)')
+        conn.execute('create virtual table if not exists songs USING fts5(name, path)')
+        conn.execute('create table if not exists played (path varchar, at datetime default current_timestamp)')
         existing = {row[0] for row in conn.execute('select path from songs')}
 
         for dirp, dirnames, filenames in files:
             cnt += len(filenames)
             bar.progress(cnt / total, f'Indexing {root}')
-            for filename, p in [(fn, os.path.join(dirp, fn)) for fn in filenames]:
+            for filename, p in [(fn, str(Path(os.path.join(dirp, fn)).relative_to(root))) for fn in filenames]:
                 if p not in existing:
                     conn.execute('insert into songs (name, path) values (?, ?)', (filename, p))
                 existing.discard(p)
@@ -56,38 +58,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def ensure_vlc():
-    status = None
-    try:
-        status = requests.get('http://:password@localhost:9000/requests/status.xml').status_code
-    except IOError:
-        print('vlc not running...')
-    if status != 200:
-        print('Starting VLC..')
-        p = Popen(['vlc', '--intf=http', '--http-port', '9000', '--http-password=password'], cwd=os.getcwd(), stdin=PIPE)
-        p.stdin.close()
-        time.sleep(1)
-
-
-def play(path: str):
-    ensure_vlc()
-    # https://wiki.videolan.org/VLC_HTTP_requests/
-    url = urlunparse(urlparse('http://:password@localhost:9000/requests/status.xml')
-                     ._replace(query=urlencode(
-                         {'command': 'in_play', 'input': path} if path else {'command': 'pl_pause'},
-                         quote_via=quote)))
-    requests.get(url).raise_for_status()
-    with sqlite3.connect(DB) as conn:
-        conn.execute('insert into played (path) values (?)', (path,))
-
-
 def player():
     if 'song' not in st.session_state:
         st.session_state['song'] = None
 
     with sqlite3.connect(DB) as conn:
         if time.time() - is_warm() < .05:
-            index(root)
+            index(fs_root)
         count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
         def fts(term: str):
@@ -95,12 +72,13 @@ def player():
                                 (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
 
         if (selected_value := st_searchbox(fts, key="searchbox",
-                                           label=f'{count} songs in {root}')) != st.session_state.song:
-            play(selected_value)
+                                           label=f'{count} songs in {fs_root}')) != st.session_state.song:
+            with sqlite3.connect(DB) as conn:
+                conn.execute('insert into played (path) values (?)', (selected_value,))
             st.session_state.song = selected_value
-
-    st.markdown(f'<iframe src="http://:password@localhost:9000" allow="autoplay" style="width: 100%; overflow: hidden"></iframe>',
-                unsafe_allow_html=True)
+        url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
+        st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
+                    unsafe_allow_html=True)
 
 
 def download():
@@ -133,10 +111,12 @@ def download():
                     if retval := proc.wait():
                         st.error(f'Download failed ({retval})')
                     else:
-                        os.makedirs(os.path.join(root, 'youtube'), exist_ok=True)
+                        os.makedirs(os.path.join(fs_root, 'youtube'), exist_ok=True)
                         with sqlite3.connect(DB) as conn:
                             for fn in os.listdir(tmpdir):
-                                dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(root, 'youtube'))
+                                dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(fs_root, 'youtube'))
+                                dst = str(Path(dst).relative_to(fs_root))
+                                print(f'Indexing {dst}')
                                 conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
                         st.success(f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} "
                                    f"downloaded successfully and added to library!")
@@ -148,6 +128,5 @@ pages = {
     "Player": player,
     "Download": download,
 }
-
 selected_page = st.sidebar.selectbox(' ', options=pages.keys())
 pages[selected_page]()
