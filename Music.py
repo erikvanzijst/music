@@ -58,75 +58,65 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def player():
-    if 'song' not in st.session_state:
-        st.session_state['song'] = None
+if 'song' not in st.session_state:
+    st.session_state['song'] = None
 
-    with sqlite3.connect(DB) as conn:
-        if time.time() - is_warm() < .05:
-            index(fs_root)
-        count = conn.execute("select count(*) from songs").fetchall()[0][0]
+with sqlite3.connect(DB) as conn:
+    if time.time() - is_warm() < .05:
+        index(fs_root)
+    count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
-        def fts(term: str):
-            return conn.execute('select name, path from songs where path match ? ORDER BY rank',
-                                (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
+    def fts(term: str):
+        return conn.execute('select name, path from songs where path match ? ORDER BY rank',
+                            (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
 
-        if (selected_value := st_searchbox(fts, key="searchbox",
-                                           label=f'{count} songs in {fs_root}')) != st.session_state.song:
-            with sqlite3.connect(DB) as conn:
-                conn.execute('insert into played (path) values (?)', (selected_value,))
-            st.session_state.song = selected_value
-        url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
-        st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
-                    unsafe_allow_html=True)
+    if (selected_value := st_searchbox(fts, key="searchbox",
+                                       label=f'{count} songs in {fs_root}')) != st.session_state.song:
+        with sqlite3.connect(DB) as conn:
+            conn.execute('insert into played (path) values (?)', (selected_value,))
+        st.session_state.song = selected_value
+    url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
+    st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
+                unsafe_allow_html=True)
 
-
-def download():
-    if 'url' not in st.session_state:
-        st.session_state['url'] = None
+with st.expander('Download'):
+    if 'dl_url' not in st.session_state:
+        st.session_state['dl_url'] = None
     if 'dl_log' not in st.session_state:
         st.session_state['dl_log'] = ''
+    if 'dl_status' not in st.session_state:
+        st.session_state['dl_status'] = lambda: st.empty()
 
-    url = st.text_input('Paste a YouTube URL:', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+    dl_url = st.text_input('Paste a YouTube URL:', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ')
     placeholder = st.empty()
-    log = st.code(st.session_state.dl_log)
-    info = st.empty()
+    log = st.code(st.session_state.dl_log, language='text')
 
-    if url and url != st.session_state.url:
-        print(f'{url}')
-        info.empty()
+    if dl_url and dl_url != st.session_state.dl_url:
         st.session_state.dl_log = ''
         with TemporaryDirectory() as tmpdir:
             proc = Popen(['yt-dlp', '--extract-audio', '--format', 'bestaudio', '-x', '-o', '%(title)s',
-                          '--audio-format', 'mp3', url], cwd=tmpdir, stdin=PIPE, stdout=PIPE)
+                          '--audio-format', 'mp3', dl_url], cwd=tmpdir, stdin=PIPE, stdout=PIPE)
             try:
                 proc.stdin.close()
                 stdout: str = ''
                 with placeholder.container():
                     with st.spinner():
                         while line := proc.stdout.readline().replace(b'\r', b'\n').decode('UTF-8'):
-                            log.text(stdout := (stdout + line))
+                            st.session_state.dl_log += line
+                            log.text(st.session_state.dl_log)
             finally:
-                with info:
-                    if retval := proc.wait():
-                        st.error(f'Download failed ({retval})')
-                    else:
-                        os.makedirs(os.path.join(fs_root, 'youtube'), exist_ok=True)
-                        with sqlite3.connect(DB) as conn:
-                            for fn in os.listdir(tmpdir):
-                                dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(fs_root, 'youtube'))
-                                dst = str(Path(dst).relative_to(fs_root))
-                                print(f'Indexing {dst}')
-                                conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
-                        st.success(f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} "
-                                   f"downloaded successfully and added to library!")
+                if retval := proc.wait():
+                    st.session_state.dl_status = lambda: st.error(f'Download failed ({retval})')
+                else:
+                    os.makedirs(os.path.join(fs_root, 'youtube'), exist_ok=True)
+                    with sqlite3.connect(DB) as conn:
+                        for fn in os.listdir(tmpdir):
+                            dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(fs_root, 'youtube'))
+                            dst = str(Path(dst).relative_to(fs_root))
+                            print(f'Indexing {dst}')
+                            conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
+                    msg = f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} downloaded successfully and added to library!"
+                    st.session_state.dl_status = lambda: st.success(msg)
 
-        st.session_state.url = url
-
-
-pages = {
-    "Player": player,
-    "Download": download,
-}
-selected_page = st.sidebar.selectbox(' ', options=pages.keys())
-pages[selected_page]()
+        st.session_state.dl_url = dl_url
+    st.session_state.dl_status()
