@@ -1,3 +1,4 @@
+import html
 import os
 import shutil
 import sys
@@ -6,8 +7,11 @@ import sqlite3
 from pathlib import Path
 from subprocess import Popen, PIPE
 from tempfile import TemporaryDirectory
+from typing import Literal
 from urllib.parse import urlparse, urlunparse, quote
 
+import eyed3
+import pandas as pd
 import streamlit as st
 from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
@@ -16,11 +20,29 @@ DB = 'music.db'
 st.set_page_config(layout="wide", page_title="Music search")
 fs_root = '.' if not sys.argv[1:] else sys.argv[1]
 base_url = urlparse(st_javascript("await fetch('').then(r => window.parent.location.href)"))._replace(path='')
+ranking_sql = """
+    with playcounts as (
+            select s.path, s.name, case when pc.cnt is null then 0 else pc.cnt end as playcnt
+            from songs s
+            left join (select path, count(*) as cnt from played group by path) pc on s.path = pc.path),
+        countranks as (
+            select playcnt, row_number() over (order by playcnt desc) as rank
+            from playcounts
+            group by playcnt)
+    select pc.name as 'Song', pc.path, pc.playcnt as 'Count', cr.rank
+    from playcounts pc
+    join countranks cr on cr.playcnt = pc.playcnt
+    """
 
 
 @st.cache_data(show_spinner=False)
 def is_warm() -> float:
     return time.time()
+
+
+def align(content: str, direction: Literal['right', 'center'], unsafe_allow_html=False):
+    st.markdown(f'<div style="text-align: {direction}; width: 100%">{content if unsafe_allow_html else html.escape(content)}</div>',
+                unsafe_allow_html=True)
 
 
 def index(root: str) -> None:
@@ -66,18 +88,27 @@ with sqlite3.connect(DB) as conn:
         index(fs_root)
     count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
+    def get_rank(path: str) -> int:
+        return int(pd.read_sql_query(f"{ranking_sql} where path = ?", conn, params=[path]).iloc[0]['rank'])
+
     def fts(term: str):
         return conn.execute('select name, path from songs where path match ? ORDER BY rank',
                             (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
 
-    if (selected_value := st_searchbox(fts, key="searchbox",
-                                       label=f'{count} songs in {fs_root}')) != st.session_state.song:
-        with sqlite3.connect(DB) as conn:
+    with st.container(border=True):
+        if (selected_value := st_searchbox(fts, key="searchbox",
+                                           label=f'{count} songs in {fs_root}')) != st.session_state.song:
             conn.execute('insert into played (path) values (?)', (selected_value,))
-        st.session_state.song = selected_value
-    url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
-    st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
-                unsafe_allow_html=True)
+            st.session_state.song = selected_value
+
+        url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
+        st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
+                    unsafe_allow_html=True)
+        tag = st.session_state.song and eyed3.load(os.path.join(fs_root, st.session_state.song))
+        c1, c2 = st.columns([2, 1])
+        c1.markdown(os.path.basename(st.session_state.song) if st.session_state.song else '')
+        with c2:
+            align('' if tag is None else f'[🏆 #{get_rank(st.session_state.song)}] [{tag.info.sample_freq / 1000}kHz]', 'right')
 
 with st.expander('Download'):
     if 'dl_url' not in st.session_state:
@@ -98,12 +129,10 @@ with st.expander('Download'):
                           '--audio-format', 'mp3', dl_url], cwd=tmpdir, stdin=PIPE, stdout=PIPE)
             try:
                 proc.stdin.close()
-                stdout: str = ''
-                with placeholder.container():
-                    with st.spinner():
-                        while line := proc.stdout.readline().replace(b'\r', b'\n').decode('UTF-8'):
-                            st.session_state.dl_log += line
-                            log.text(st.session_state.dl_log)
+                with placeholder.container(), st.spinner():
+                    while line := proc.stdout.readline().replace(b'\r', b'\n').decode('UTF-8'):
+                        st.session_state.dl_log += line
+                        log.text(st.session_state.dl_log)
             finally:
                 if retval := proc.wait():
                     st.session_state.dl_status = lambda: st.error(f'Download failed ({retval})')
@@ -120,3 +149,21 @@ with st.expander('Download'):
 
         st.session_state.dl_url = dl_url
     st.session_state.dl_status()
+
+with st.expander('Stats'), sqlite3.connect(DB) as conn:
+    c1, c2 = st.columns(2)
+    df1 = pd.read_sql_query(f'{ranking_sql} order by rank, path limit 50', conn)
+    c1.markdown('Most played')
+    c1.dataframe(df1[['Count', 'Song']], hide_index=True, use_container_width=True)
+
+    df2 = pd.read_sql_query("""select s.name as 'Song'
+                               from played p
+                               join songs s on s.path = p.path
+                               order by p.at desc
+                               limit 50""", conn)
+    c2.markdown('Last played')
+    c2.dataframe(df2, hide_index=True, use_container_width=True)
+
+align('<a href="https://github.com/erikvanzijst/music">'
+      '<img src="https://badgen.net/static/github/code?icon=github">'
+      '</a>', 'center', unsafe_allow_html=True)

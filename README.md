@@ -1,5 +1,9 @@
 # Music player
 
+A simple browser-based player serving mp3 files directly off a server.
+
+![](screen1.png)
+
 ![](player.gif)
 
 An MP3 player in Streamlit?
