@@ -1,24 +1,48 @@
+import html
 import os
 import shutil
 import sys
 import time
 import sqlite3
+from pathlib import Path
 from subprocess import Popen, PIPE
 from tempfile import TemporaryDirectory
-from urllib.parse import urlencode, urlparse, urlunparse, quote
+from typing import Literal
+from urllib.parse import urlparse, urlunparse, quote
 
-import requests
+import eyed3
+import pandas as pd
 import streamlit as st
+from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
 
 DB = 'music.db'
 st.set_page_config(layout="wide", page_title="Music search")
-root = '../../nuc/Music/spring2007' if not sys.argv[1:] else sys.argv[1]
+fs_root = '.' if not sys.argv[1:] else sys.argv[1]
+base_url = urlparse(st_javascript("await fetch('').then(r => window.parent.location.href)"))._replace(path='')
+ranking_sql = """
+    with playcounts as (
+            select s.path, s.name, case when pc.cnt is null then 0 else pc.cnt end as playcnt
+            from songs s
+            left join (select path, count(*) as cnt from played group by path) pc on s.path = pc.path),
+        countranks as (
+            select playcnt, row_number() over (order by playcnt desc) as rank
+            from playcounts
+            group by playcnt)
+    select pc.name as 'Song', pc.path, pc.playcnt as 'Count', cr.rank
+    from playcounts pc
+    join countranks cr on cr.playcnt = pc.playcnt
+    """
 
 
 @st.cache_data(show_spinner=False)
 def is_warm() -> float:
     return time.time()
+
+
+def align(content: str, direction: Literal['right', 'center'], unsafe_allow_html=False):
+    st.markdown(f'<div style="text-align: {direction}; width: 100%">{content if unsafe_allow_html else html.escape(content)}</div>',
+                unsafe_allow_html=True)
 
 
 def index(root: str) -> None:
@@ -28,14 +52,14 @@ def index(root: str) -> None:
     total = sum(len(filenames) for _, _, filenames in files)
 
     with sqlite3.connect(DB) as conn:
-        conn.execute('CREATE VIRTUAL TABLE if not exists songs USING fts5(name, path)')
-        conn.execute('CREATE TABLE if not exists played (path varchar, at datetime default current_timestamp)')
+        conn.execute('create virtual table if not exists songs USING fts5(name, path)')
+        conn.execute('create table if not exists played (path varchar, at datetime default current_timestamp)')
         existing = {row[0] for row in conn.execute('select path from songs')}
 
         for dirp, dirnames, filenames in files:
             cnt += len(filenames)
             bar.progress(cnt / total, f'Indexing {root}')
-            for filename, p in [(fn, os.path.join(dirp, fn)) for fn in filenames]:
+            for filename, p in [(fn, str(Path(os.path.join(dirp, fn)).relative_to(root))) for fn in filenames]:
                 if p not in existing:
                     conn.execute('insert into songs (name, path) values (?, ?)', (filename, p))
                 existing.discard(p)
@@ -56,98 +80,90 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def ensure_vlc():
-    status = None
-    try:
-        status = requests.get('http://:password@localhost:9000/requests/status.xml').status_code
-    except IOError:
-        print('vlc not running...')
-    if status != 200:
-        print('Starting VLC..')
-        p = Popen(['vlc', '--intf=http', '--http-port', '9000', '--http-password=password'], cwd=os.getcwd(), stdin=PIPE)
-        p.stdin.close()
-        time.sleep(1)
+if 'song' not in st.session_state:
+    st.session_state['song'] = None
 
+with sqlite3.connect(DB) as conn:
+    if time.time() - is_warm() < .05:
+        index(fs_root)
+    count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
-def play(path: str):
-    ensure_vlc()
-    # https://wiki.videolan.org/VLC_HTTP_requests/
-    url = urlunparse(urlparse('http://:password@localhost:9000/requests/status.xml')
-                     ._replace(query=urlencode(
-                         {'command': 'in_play', 'input': path} if path else {'command': 'pl_pause'},
-                         quote_via=quote)))
-    requests.get(url).raise_for_status()
-    with sqlite3.connect(DB) as conn:
-        conn.execute('insert into played (path) values (?)', (path,))
+    def get_rank(path: str) -> int:
+        return int(pd.read_sql_query(f"{ranking_sql} where path = ?", conn, params=[path]).iloc[0]['rank'])
 
+    def fts(term: str):
+        return conn.execute('select name, path from songs where path match ? ORDER BY rank',
+                            (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
 
-def player():
-    if 'song' not in st.session_state:
-        st.session_state['song'] = None
-
-    with sqlite3.connect(DB) as conn:
-        if time.time() - is_warm() < .05:
-            index(root)
-        count = conn.execute("select count(*) from songs").fetchall()[0][0]
-
-        def fts(term: str):
-            return conn.execute('select name, path from songs where path match ? ORDER BY rank',
-                                (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
-
+    with st.container(border=True):
         if (selected_value := st_searchbox(fts, key="searchbox",
-                                           label=f'{count} songs in {root}')) != st.session_state.song:
-            play(selected_value)
+                                           label=f'{count} songs in {fs_root}')) != st.session_state.song:
+            conn.execute('insert into played (path) values (?)', (selected_value,))
             st.session_state.song = selected_value
 
-    st.markdown(f'<iframe src="http://:password@localhost:9000" allow="autoplay" style="width: 100%; overflow: hidden"></iframe>',
-                unsafe_allow_html=True)
+        url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
+        st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
+                    unsafe_allow_html=True)
+        tag = st.session_state.song and eyed3.load(os.path.join(fs_root, st.session_state.song))
+        c1, c2 = st.columns([2, 1])
+        c1.markdown(os.path.basename(st.session_state.song) if st.session_state.song else '')
+        with c2:
+            align('' if tag is None else f'[🏆 #{get_rank(st.session_state.song)}] [{tag.info.sample_freq / 1000}kHz]', 'right')
 
-
-def download():
-    if 'url' not in st.session_state:
-        st.session_state['url'] = None
+with st.expander('Download'):
+    if 'dl_url' not in st.session_state:
+        st.session_state['dl_url'] = None
     if 'dl_log' not in st.session_state:
         st.session_state['dl_log'] = ''
+    if 'dl_status' not in st.session_state:
+        st.session_state['dl_status'] = lambda: st.empty()
 
-    url = st.text_input('Paste a YouTube URL:', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+    dl_url = st.text_input('Paste a YouTube URL:', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ')
     placeholder = st.empty()
-    log = st.code(st.session_state.dl_log)
-    info = st.empty()
+    log = st.code(st.session_state.dl_log, language='text')
 
-    if url and url != st.session_state.url:
-        print(f'{url}')
-        info.empty()
+    if dl_url and dl_url != st.session_state.dl_url:
         st.session_state.dl_log = ''
         with TemporaryDirectory() as tmpdir:
             proc = Popen(['yt-dlp', '--extract-audio', '--format', 'bestaudio', '-x', '-o', '%(title)s',
-                          '--audio-format', 'mp3', url], cwd=tmpdir, stdin=PIPE, stdout=PIPE)
+                          '--audio-format', 'mp3', dl_url], cwd=tmpdir, stdin=PIPE, stdout=PIPE)
             try:
                 proc.stdin.close()
-                stdout: str = ''
-                with placeholder.container():
-                    with st.spinner():
-                        while line := proc.stdout.readline().replace(b'\r', b'\n').decode('UTF-8'):
-                            log.text(stdout := (stdout + line))
+                with placeholder.container(), st.spinner():
+                    while line := proc.stdout.readline().replace(b'\r', b'\n').decode('UTF-8'):
+                        st.session_state.dl_log += line
+                        log.text(st.session_state.dl_log)
             finally:
-                with info:
-                    if retval := proc.wait():
-                        st.error(f'Download failed ({retval})')
-                    else:
-                        os.makedirs(os.path.join(root, 'youtube'), exist_ok=True)
-                        with sqlite3.connect(DB) as conn:
-                            for fn in os.listdir(tmpdir):
-                                dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(root, 'youtube'))
-                                conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
-                        st.success(f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} "
-                                   f"downloaded successfully and added to library!")
+                if retval := proc.wait():
+                    st.session_state.dl_status = lambda: st.error(f'Download failed ({retval})')
+                else:
+                    os.makedirs(os.path.join(fs_root, 'youtube'), exist_ok=True)
+                    with sqlite3.connect(DB) as conn:
+                        for fn in os.listdir(tmpdir):
+                            dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(fs_root, 'youtube'))
+                            dst = str(Path(dst).relative_to(fs_root))
+                            print(f'Indexing {dst}')
+                            conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
+                    msg = f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} downloaded successfully and added to library!"
+                    st.session_state.dl_status = lambda: st.success(msg)
 
-        st.session_state.url = url
+        st.session_state.dl_url = dl_url
+    st.session_state.dl_status()
 
+with st.expander('Stats'), sqlite3.connect(DB) as conn:
+    c1, c2 = st.columns(2)
+    df1 = pd.read_sql_query(f'{ranking_sql} order by rank, path limit 50', conn)
+    c1.markdown('Most played')
+    c1.dataframe(df1[['Count', 'Song']], hide_index=True, use_container_width=True)
 
-pages = {
-    "Player": player,
-    "Download": download,
-}
+    df2 = pd.read_sql_query("""select s.name as 'Song'
+                               from played p
+                               join songs s on s.path = p.path
+                               order by p.at desc
+                               limit 50""", conn)
+    c2.markdown('Last played')
+    c2.dataframe(df2, hide_index=True, use_container_width=True)
 
-selected_page = st.sidebar.selectbox(' ', options=pages.keys())
-pages[selected_page]()
+align('<a href="https://github.com/erikvanzijst/music">'
+      '<img src="https://badgen.net/static/github/code?icon=github">'
+      '</a>', 'center', unsafe_allow_html=True)
