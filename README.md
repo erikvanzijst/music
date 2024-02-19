@@ -1,4 +1,6 @@
-# Music player
+# File-Over-App: Music player
+
+## Play your own files on your own network
 
 A simple browser-based player serving mp3 files directly off a server.
 
