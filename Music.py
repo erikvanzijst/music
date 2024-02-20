@@ -17,6 +17,7 @@ from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
 
 DB = 'music.db'
+extensions = {'.mp3', '.flac', '.ogg', '.oga', '.mogg', '.opus', '.vox', '.webm', '.m4a', '.wav', '.wma', '.aac', '.aax', '.m4b'}
 st.set_page_config(layout="wide", page_title="Music search")
 fs_root = '.' if not sys.argv[1:] else sys.argv[1]
 base_url = urlparse(st_javascript("await fetch('').then(r => window.parent.location.href)"))._replace(path='')
@@ -47,25 +48,21 @@ def align(content: str, direction: Literal['right', 'center'], unsafe_allow_html
 
 def index(root: str) -> None:
     cnt = 0
-    bar = st.progress(0, f'Crawling files {root}')
-    files = list(os.walk(root))
-    total = sum(len(filenames) for _, _, filenames in files)
+    bar = st.progress(0, f'Crawling files {root} ...')
+    paths = [str(p) for p in (Path(parent, fn).relative_to(root)
+                              for parent, _, fns in os.walk(root)
+                              for fn in fns)
+             if p.suffix.lower() in extensions]
+    total = len(paths)
 
     with sqlite3.connect(DB) as conn:
         conn.execute('create virtual table if not exists songs USING fts5(name, path)')
         conn.execute('create table if not exists played (path varchar, at datetime default current_timestamp)')
-        existing = {row[0] for row in conn.execute('select path from songs')}
+        conn.execute('delete from songs')
 
-        for dirp, dirnames, filenames in files:
-            cnt += len(filenames)
-            bar.progress(cnt / total, f'Indexing {root}')
-            for filename, p in [(fn, str(Path(os.path.join(dirp, fn)).relative_to(root))) for fn in filenames]:
-                if p not in existing:
-                    conn.execute('insert into songs (name, path) values (?, ?)', (filename, p))
-                existing.discard(p)
-        if existing:
-            bar.progress(1.0, f'Dropping {len(existing)} removed songs...')
-            conn.executemany('delete from songs where path = ?', [(p,) for p in existing])
+        for p in paths:
+            bar.progress((cnt := cnt + 1) / total, f'Indexing {root}')
+            conn.execute('insert into songs (name, path) values (?, ?)', (os.path.basename(p), p))
         bar.empty()
 
 
@@ -142,7 +139,6 @@ with st.expander('Download'):
                         for fn in os.listdir(tmpdir):
                             dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(fs_root, 'youtube'))
                             dst = str(Path(dst).relative_to(fs_root))
-                            print(f'Indexing {dst}')
                             conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
                     msg = f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} downloaded successfully and added to library!"
                     st.session_state.dl_status = lambda: st.success(msg)
@@ -152,17 +148,18 @@ with st.expander('Download'):
 
 with st.expander('Stats'), sqlite3.connect(DB) as conn:
     c1, c2 = st.columns(2)
-    df1 = pd.read_sql_query(f'{ranking_sql} order by rank, path limit 50', conn)
-    c1.markdown('Most played')
-    c1.dataframe(df1[['Count', 'Song']], hide_index=True, use_container_width=True)
 
-    df2 = pd.read_sql_query("""select s.name as 'Song'
-                               from played p
-                               join songs s on s.path = p.path
-                               order by p.at desc
-                               limit 50""", conn)
-    c2.markdown('Last played')
-    c2.dataframe(df2, hide_index=True, use_container_width=True)
+    c1.markdown('Last played')
+    c1.dataframe(pd.read_sql_query("""
+        select s.name as 'Song'
+        from played p
+        join songs s on s.path = p.path
+        order by p.at desc
+        limit 100""", conn), hide_index=True, use_container_width=True)
+
+    c2.markdown('Most played')
+    c2.dataframe(pd.read_sql_query(f'{ranking_sql} order by rank, path limit 100', conn)[['Count', 'Song']],
+                 hide_index=True, use_container_width=True)
 
 align('<a href="https://github.com/erikvanzijst/music">'
       '<img src="https://badgen.net/static/github/code?icon=github">'
