@@ -47,7 +47,6 @@ def align(content: str, direction: Literal['right', 'center'], unsafe_allow_html
 
 
 def index(root: str) -> None:
-    cnt = 0
     bar = st.progress(0, f'Crawling files {root} ...')
     paths = [str(p) for p in (Path(parent, fn).relative_to(root)
                               for parent, _, fns in os.walk(root)
@@ -60,8 +59,8 @@ def index(root: str) -> None:
         conn.execute('create table if not exists played (path varchar, at datetime default current_timestamp)')
         conn.execute('delete from songs')
 
-        for p in paths:
-            bar.progress((cnt := cnt + 1) / total, f'Indexing {root}')
+        for idx, p in enumerate(paths, 1):
+            bar.progress(idx / total, f'Indexing {root}')
             conn.execute('insert into songs (name, path) values (?, ?)', (os.path.basename(p), p))
         bar.empty()
 
