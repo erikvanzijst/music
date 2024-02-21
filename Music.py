@@ -30,7 +30,7 @@ ranking_sql = """
             select playcnt, row_number() over (order by playcnt desc) as rank
             from playcounts
             group by playcnt)
-    select pc.name as 'Song', pc.path, pc.playcnt as 'Count', cr.rank
+    select pc.name as 'Song', pc.playcnt as 'Count', cr.rank as 'Rank'
     from playcounts pc
     join countranks cr on cr.playcnt = pc.playcnt
     """
@@ -52,15 +52,14 @@ def index(root: str) -> None:
                               for parent, _, fns in os.walk(root)
                               for fn in fns)
              if p.suffix.lower() in extensions]
-    total = len(paths)
 
     with sqlite3.connect(DB) as conn:
-        conn.execute('create virtual table if not exists songs USING fts5(name, path)')
+        conn.execute('create virtual table if not exists songs using fts5(name, path)')
         conn.execute('create table if not exists played (path varchar, at datetime default current_timestamp)')
         conn.execute('delete from songs')
 
         for idx, p in enumerate(paths, 1):
-            bar.progress(idx / total, f'Indexing {root}')
+            bar.progress(idx / len(paths), f'Indexing {idx}/{len(paths)} ...')
             conn.execute('insert into songs (name, path) values (?, ?)', (os.path.basename(p), p))
         bar.empty()
 
@@ -85,7 +84,7 @@ with sqlite3.connect(DB) as conn:
     count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
     def get_rank(path: str) -> int:
-        return int(pd.read_sql_query(f"{ranking_sql} where path = ?", conn, params=[path]).iloc[0]['rank'])
+        return int(pd.read_sql_query(f"{ranking_sql} where path = ?", conn, params=[path]).iloc[0]['Rank'])
 
     def fts(term: str):
         return conn.execute('select name, path from songs where path match ? ORDER BY rank',
@@ -104,7 +103,8 @@ with sqlite3.connect(DB) as conn:
         c1, c2 = st.columns([2, 1])
         c1.markdown(os.path.basename(st.session_state.song) if st.session_state.song else '')
         with c2:
-            align('' if tag is None else f'[🏆 #{get_rank(st.session_state.song)}] [{tag.info.sample_freq / 1000}kHz]', 'right')
+            align('' if tag is None else f'[🏆 #{get_rank(st.session_state.song)}] [{tag.info.sample_freq / 1000}kHz]',
+                  'right')
 
 with st.expander('Download'):
     if 'dl_url' not in st.session_state:
