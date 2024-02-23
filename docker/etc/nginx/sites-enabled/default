@@ -34,6 +34,15 @@ server {
 		autoindex on;
 	}
 
+    location /__static {
+        rewrite ^/__static/(.*)$ /$1 break;
+        # First attempt to serve request as file, then
+        # as directory, then fall back to displaying a 404.
+        root /app/static;
+        try_files $uri $uri/ =404;
+        autoindex on;
+    }
+
     location / {
         # streamlit
         proxy_pass http://localhost:8001;
