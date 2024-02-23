@@ -64,6 +64,29 @@ def index(root: str) -> None:
         bar.empty()
 
 
+@st.cache_data(show_spinner=False)
+def get_rank(path: str) -> int:
+    with sqlite3.connect(DB) as conn:
+        return int(pd.read_sql_query(f"{ranking_sql} where path = ?", conn, params=[path]).iloc[0]['Rank'])
+
+
+@st.cache_data(show_spinner=False)
+def get_last_played() -> pd.DataFrame:
+    with sqlite3.connect(DB) as conn:
+        return pd.read_sql_query("""
+                select s.name as 'Song'
+                from played p
+                join songs s on s.path = p.path
+                order by p.at desc
+                limit 100""", conn)
+
+
+@st.cache_data(show_spinner=False)
+def get_most_played() -> pd.DataFrame:
+    with sqlite3.connect(DB) as conn:
+        return pd.read_sql_query(f'{ranking_sql} order by rank, path limit 100', conn)[['Count', 'Song']]
+
+
 st.markdown("""
     <style>
         .reportview-container {
@@ -83,9 +106,6 @@ with sqlite3.connect(DB) as conn:
         index(fs_root)
     count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
-    def get_rank(path: str) -> int:
-        return int(pd.read_sql_query(f"{ranking_sql} where path = ?", conn, params=[path]).iloc[0]['Rank'])
-
     def fts(term: str):
         return conn.execute('select name, path from songs where path match ? ORDER BY rank',
                             (' OR '.join([t.replace('"', '""') + '*' for t in term.split()]),)).fetchall()
@@ -95,6 +115,9 @@ with sqlite3.connect(DB) as conn:
                                            label=f'{count} songs in {fs_root}')) != st.session_state.song:
             conn.execute('insert into played (path) values (?)', (selected_value,))
             st.session_state.song = selected_value
+            get_rank.clear()
+            get_last_played.clear()
+            get_most_played.clear()
 
         url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
         st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
@@ -149,16 +172,10 @@ with st.expander('Stats'), sqlite3.connect(DB) as conn:
     c1, c2 = st.columns(2)
 
     c1.markdown('Last played')
-    c1.dataframe(pd.read_sql_query("""
-        select s.name as 'Song'
-        from played p
-        join songs s on s.path = p.path
-        order by p.at desc
-        limit 100""", conn), hide_index=True, use_container_width=True)
+    c1.dataframe(get_last_played(), hide_index=True, use_container_width=True)
 
     c2.markdown('Most played')
-    c2.dataframe(pd.read_sql_query(f'{ranking_sql} order by rank, path limit 100', conn)[['Count', 'Song']],
-                 hide_index=True, use_container_width=True)
+    c2.dataframe(get_most_played(), hide_index=True, use_container_width=True)
 
 align('<a href="https://github.com/erikvanzijst/music">'
       '<img src="https://badgen.net/static/github/code?icon=github">'
