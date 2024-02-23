@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
+from streamlit.components.v1 import html as st_html
 
 DB = 'music.db'
 extensions = {'.mp3', '.flac', '.ogg', '.oga', '.mogg', '.opus', '.vox', '.webm', '.m4a', '.wav', '.wma', '.aac', '.aax', '.m4b'}
@@ -145,8 +146,10 @@ def player():
                     f.clear()
 
             url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
-            st.markdown(f"""<audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>""",
-                        unsafe_allow_html=True)
+            st_html(f"""<link rel="stylesheet" type="text/css" href="/__static/visualization.css">
+                        <canvas id="canvas"></canvas>
+                        <audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>
+                        <script src="/__static/visualization.js"></script>""", height=200)
             c1, c2 = st.columns([2, 1])
             if st.session_state.song:
                 tag = eyed3.load(os.path.join(fs_root, st.session_state.song))
