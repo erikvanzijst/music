@@ -112,7 +112,7 @@ with sqlite3.connect(DB) as conn:
 
     with st.container(border=True):
         if (selected_value := st_searchbox(fts, key="searchbox",
-                                           label=f'{count} songs in {fs_root}')) != st.session_state.song:
+                                           label=f'{count} songs')) != st.session_state.song:
             conn.execute('insert into played (path) values (?)', (selected_value,))
             st.session_state.song = selected_value
             get_rank.clear()
