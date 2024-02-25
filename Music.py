@@ -159,12 +159,13 @@ def player():
             c1, c2 = st.columns([2, 1])
             if st.session_state.song:
                 tag = eyed3.load(os.path.join(fs_root, st.session_state.song))
-                starred = conn.execute('select path from tags where path = ?', [st.session_state.song]).fetchone()
-                c1.toggle(f'[{"⭐" if starred else "✩"}]  {os.path.basename(st.session_state.song)}', key='star', value=bool(starred), on_change=star, args=(st.session_state.song,))
+                starred = bool(conn.execute('select path from tags where tag = ? and path = ?', ['star', st.session_state.song]).fetchone())
+                c1.toggle(f'[{"⭐" if starred else "✩"}]  {os.path.basename(st.session_state.song)}',
+                          key='star', value=starred, on_change=star, args=(st.session_state.song,))
 
                 with c2:
                     align(f'[🏆 #{get_rank(st.session_state.song)}] [{(tag.info.sample_freq / 1000) if tag else "?"}kHz]',
-                      'right', nowrap=False)
+                          'right')
             else:
                 c1.markdown('')
 
