@@ -13,6 +13,7 @@ from urllib.parse import urlparse, urlunparse, quote
 import eyed3
 import pandas as pd
 import streamlit as st
+from st_aggrid import AgGrid, ColumnsAutoSizeMode
 from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
 
@@ -109,15 +110,18 @@ def star(path: str):
 
 
 def stats():
-    with st.expander('Stats'):
+    # with st.expander('Stats'):
         last, star, most = st.columns(3)
 
-        last.write('🕒 Last played')
-        last.dataframe(get_last_played(), hide_index=True, use_container_width=True)
-        most.write('🏆 Most played')
-        most.dataframe(get_most_played(), hide_index=True, use_container_width=True)
-        star.write('⭐ Starred')
-        star.dataframe(get_starred(), hide_index=True, use_container_width=True)
+        with last:
+            st.write('🕒 Last played')
+            AgGrid(get_last_played(), columns_auto_size_mode=ColumnsAutoSizeMode.FIT_ALL_COLUMNS_TO_VIEW, height=600)
+        with last:
+            st.write('🏆 Most played')
+            AgGrid(get_most_played(), columns_auto_size_mode=ColumnsAutoSizeMode.FIT_ALL_COLUMNS_TO_VIEW, height=600)
+        with star:
+            st.write('⭐ Starred')
+            AgGrid(get_starred(), columns_auto_size_mode=ColumnsAutoSizeMode.FIT_ALL_COLUMNS_TO_VIEW, height=600)
 
 
 st.markdown("""
