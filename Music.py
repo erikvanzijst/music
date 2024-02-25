@@ -79,14 +79,13 @@ def get_last_played() -> pd.DataFrame:
                 select s.name as 'Song'
                 from played p
                 join songs s on s.path = p.path
-                order by p.at desc
-                limit 100""", conn)
+                order by p.at desc""", conn)
 
 
 @st.cache_data(show_spinner=False)
 def get_most_played() -> pd.DataFrame:
     with sqlite3.connect(DB) as conn:
-        return pd.read_sql_query(f'{ranking_sql} order by rank, path limit 100', conn)[['Count', 'Song']]
+        return pd.read_sql_query(f'{ranking_sql} order by rank, path', conn)[['Count', 'Song']]
 
 
 @st.cache_data(show_spinner=False)
