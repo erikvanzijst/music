@@ -85,7 +85,7 @@ def get_last_played() -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def get_most_played() -> pd.DataFrame:
     with sqlite3.connect(DB) as conn:
-        return pd.read_sql_query(f'{ranking_sql} order by rank, path', conn)[['Count', 'Song']]
+        return pd.read_sql_query(f'{ranking_sql} where Count > 0 order by rank, path', conn)[['Count', 'Song']]
 
 
 @st.cache_data(show_spinner=False)
