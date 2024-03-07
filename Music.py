@@ -41,9 +41,8 @@ def align(content: str, direction: Literal['right', 'center'], nowrap=False, uns
                 unsafe_allow_html=True)
 
 
-@st.cache_resource(show_spinner=False)
-def index(root: str) -> None:
-    bar = st.progress(0, f'Crawling files {root} ...')
+@st.cache_resource()
+def index(root: str):
     paths = [str(p) for p in (Path(parent, fn).relative_to(root)
                               for parent, _, fns in os.walk(root)
                               for fn in fns)
@@ -56,9 +55,8 @@ def index(root: str) -> None:
         conn.execute('delete from songs')
 
         for idx, p in enumerate(paths, 1):
-            bar.progress(idx / len(paths), f'Indexing {idx}/{len(paths)} ...')
             conn.execute('insert into songs (name, path) values (?, ?)', (os.path.basename(p), p))
-        bar.empty()
+    return object()
 
 
 @st.cache_data(show_spinner=False)
