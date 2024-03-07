@@ -2,7 +2,6 @@ import html
 import os
 import shutil
 import sys
-import time
 import sqlite3
 from pathlib import Path
 from subprocess import Popen, PIPE
@@ -36,17 +35,13 @@ ranking_sql = """
     """
 
 
-@st.cache_data(show_spinner=False)
-def is_warm() -> float:
-    return time.time()
-
-
 def align(content: str, direction: Literal['right', 'center'], nowrap=False, unsafe_allow_html=False):
     st.markdown(f'<div style="text-align: {direction}; width: 100%; {"white-space: nowrap;" if nowrap else ""}">'
                 f'{content if unsafe_allow_html else html.escape(content)}</div>',
                 unsafe_allow_html=True)
 
 
+@st.cache_resource(show_spinner=False)
 def index(root: str) -> None:
     bar = st.progress(0, f'Crawling files {root} ...')
     paths = [str(p) for p in (Path(parent, fn).relative_to(root)
@@ -135,9 +130,8 @@ def player():
     if 'song' not in st.session_state:
         st.session_state['song'] = None
 
+    index(fs_root)
     with sqlite3.connect(DB) as conn:
-        if time.time() - is_warm() < .05:
-            index(fs_root)
         count = conn.execute("select count(*) from songs").fetchall()[0][0]
 
         def fts(term: str):
@@ -213,6 +207,9 @@ def downloader():
 player()
 downloader()
 stats()
+
+if st.button('Reindex'):
+    index.clear()
 
 align('<a href="https://github.com/erikvanzijst/music">'
       '<img src="https://badgen.net/static/github/code?icon=github">'
