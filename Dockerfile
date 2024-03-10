@@ -3,7 +3,7 @@ LABEL description="Music player"
 ENV DEBIAN-FRONTEND=noninteractive
 
 RUN apt-get update -y
-RUN apt-get install -y nginx telnet procps unzip supervisor openssh-client curl less htop ffmpeg sqlite3
+RUN apt-get install -y nginx telnet procps unzip supervisor openssh-client curl less htop ffmpeg sqlite3 gcc python3-dev
 RUN mkdir /app
 COPY docker/ /
 COPY .streamlit /app

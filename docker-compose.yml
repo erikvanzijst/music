@@ -1,7 +1,8 @@
 version: '3.8'
 services:
-  web:
+  music:
     container_name: music
+    restart: always
     build:
       context: .
       dockerfile: Dockerfile

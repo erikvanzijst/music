@@ -17,7 +17,7 @@ from streamlit_searchbox import st_searchbox
 
 DB = 'music.db'
 extensions = {'.mp3', '.flac', '.ogg', '.oga', '.mogg', '.opus', '.vox', '.webm', '.m4a', '.wav', '.wma', '.aac', '.aax', '.m4b'}
-st.set_page_config(layout="wide", page_title="🎵 Music")
+st.set_page_config(layout="wide", page_title="🎵 Music", page_icon=':musical_note:')
 fs_root = '.' if not sys.argv[1:] else sys.argv[1]
 base_url = urlparse(st_javascript("await fetch('').then(r => window.parent.location.href)"))._replace(path='')
 ranking_sql = """
