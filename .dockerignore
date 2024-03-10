@@ -1,2 +1,4 @@
 venv/
 *.db
+mp3/
+.ipynb_checkpoints/
