@@ -163,19 +163,19 @@ def player():
 
 def downloader():
     with st.expander('Download'):
-        if 'dl_url' not in st.session_state:
-            st.session_state['dl_url'] = None
         if 'dl_log' not in st.session_state:
             st.session_state['dl_log'] = ''
-        if 'dl_status' not in st.session_state:
-            st.session_state['dl_status'] = lambda: st.empty()
 
-        dl_url = st.text_input('Paste a YouTube URL:', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ')
-        placeholder = st.empty()
-        log = st.code(st.session_state.dl_log, language='text')
+        form = st.form('download_form', border=False)
+        c1, c2 = form.columns([6, 1])
+        dl_url = c1.text_input('', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ', label_visibility='collapsed')
+        submit = c2.form_submit_button(label='Go', use_container_width=True)
+        placeholder = form.empty()
+        log = form.code(st.session_state.dl_log, language='text')
 
-        if dl_url and dl_url != st.session_state.dl_url:
+        if submit:
             st.session_state.dl_log = ''
+            st.session_state.dl_status = ''
             with TemporaryDirectory() as tmpdir:
                 proc = Popen(['yt-dlp', '--extract-audio', '--format', 'bestaudio', '-x', '-o', '%(title)s',
                               '--audio-format', 'mp3', dl_url], cwd=tmpdir, stdin=PIPE, stdout=PIPE)
@@ -187,19 +187,23 @@ def downloader():
                             log.text(st.session_state.dl_log)
                 finally:
                     if retval := proc.wait():
-                        st.session_state.dl_status = lambda: st.error(f'Download failed ({retval})')
+                        st.session_state['dl_status'] = (False, f'Download failed ({retval})')
                     else:
                         os.makedirs(os.path.join(fs_root, 'youtube'), exist_ok=True)
                         with sqlite3.connect(DB) as conn:
                             for fn in os.listdir(tmpdir):
                                 dst = shutil.copy(os.path.join(tmpdir, fn), os.path.join(fs_root, 'youtube'))
                                 dst = str(Path(dst).relative_to(fs_root))
+                                conn.execute('delete from songs where path = ?', (dst,))
                                 conn.execute('insert into songs (name, path) values (?, ?)', (fn, dst))
-                        msg = f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} downloaded successfully and added to library!"
-                        st.session_state.dl_status = lambda: st.success(msg)
+                        st.session_state['dl_status'] = (True, f"Song{'s' if len(os.listdir(tmpdir)) > 1 else ''} "
+                                                               f"downloaded successfully and added to library!")
 
-            st.session_state.dl_url = dl_url
-        st.session_state.dl_status()
+        if 'dl_status' in st.session_state:
+            if st.session_state.dl_status[0]:
+                form.success(st.session_state.dl_status[1])
+            else:
+                form.error(st.session_state.dl_status[1])
 
 
 player()
