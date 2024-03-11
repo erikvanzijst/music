@@ -168,7 +168,8 @@ def downloader():
 
         form = st.form('download_form', border=False)
         c1, c2 = form.columns([6, 1])
-        dl_url = c1.text_input('', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ', label_visibility='collapsed')
+        dl_url = c1.text_input('YouTube URL', placeholder='https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                               label_visibility='collapsed')
         submit = c2.form_submit_button(label='Go', use_container_width=True)
         placeholder = form.empty()
         log = form.code(st.session_state.dl_log, language='text')
