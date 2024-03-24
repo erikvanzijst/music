@@ -1,78 +1,74 @@
-/* * 
- * audio visualizer with html5 audio element
- *
- * v0.1.0
- * 
- * licenced under the MIT license
- * 
- * see my related repos:
- * - HTML5_Audio_Visualizer https://github.com/wayou/HTML5_Audio_Visualizer
- * - 3D_Audio_Spectrum_VIsualizer https://github.com/wayou/3D_Audio_Spectrum_VIsualizer
- * - selected https://github.com/wayou/selected
- * - MeowmeowPlayer https://github.com/wayou/MeowmeowPlayer
- * 
- * reference: http://www.patrick-wied.at/blog/how-to-create-audio-visualizations-with-javascript-html
- */
-
 window.AudioContext = window.AudioContext || window.webkitAudioContext || window.mozAudioContext;
+let CONTROLS_HEIGHT = 60;
+let CAP_HEIGHT = 2;
+let BAR_WIDTH = 10, GAP = 2;
+let CAP_COLOR = '#ddd';
+let FPS = 35;
 
-var start = function() {
-    var audio = document.getElementById('player');
-    var ctx = new AudioContext();
-    var analyser = ctx.createAnalyser();
-    var audioSrc = ctx.createMediaElementSource(audio);
-    // we have to connect the MediaElementSource with the analyser 
+let start = function() {
+    let audio = document.getElementById('player');
+    let audioContext = new AudioContext();
+    let analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    let audioSrc = audioContext.createMediaElementSource(audio);
+
     audioSrc.connect(analyser);
-    analyser.connect(ctx.destination);
-    // we could configure the analyser: e.g. analyser.fftSize (for further infos read the spec)
-    // analyser.fftSize = 64;
-    // frequencyBinCount tells you how many values you'll receive from the analyser
-    var frequencyData = new Uint8Array(analyser.frequencyBinCount);
+    analyser.connect(audioContext.destination);
 
-    // we're ready to receive some data!
     var canvas = document.getElementById('canvas');
     canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight - 55;
-    console.log('canvas.height: ' + canvas.height);
+    canvas.height = window.innerHeight - CONTROLS_HEIGHT;
+    let ctx = canvas.getContext('2d');
     var cwidth = canvas.width,
         cheight = canvas.height - 2,
-        meterWidth = 10, //width of the meters in the spectrum
-        gap = 2, //gap between meters
-        capHeight = 2,
-        capStyle = '#fff',
-        meterNum = canvas.width / (10 + 2), //count of the meters
-        capYPositionArray = []; ////store the vertical position of hte caps for the preivous frame
-    ctx = canvas.getContext('2d'),
-    gradient = ctx.createLinearGradient(0, 0, 0, canvas.height - 55);
+        numBars = Math.floor(canvas.width / (BAR_WIDTH + GAP)),
+        capYPositionArray = new Array(numBars).fill(0),
+        gradient = ctx.createLinearGradient(0, 0, 0, canvas.height - CONTROLS_HEIGHT);
     gradient.addColorStop(1, '#0f0');
     gradient.addColorStop(0.5, '#ff0');
     gradient.addColorStop(0, '#f00');
-    // loop
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    var prevTs = Date.now();
+
     function renderFrame() {
-        var array = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(array);
-        var step = Math.round(array.length / meterNum); //sample limited data from the total array
-        ctx.clearRect(0, 0, cwidth, cheight);
-        for (var i = 0; i < meterNum; i++) {
-            var value = array[i * step];
-            if (capYPositionArray.length < Math.round(meterNum)) {
-                capYPositionArray.push(value);
-            };
-            ctx.fillStyle = capStyle;
-            //draw the cap, with transition effect
-            if (value < capYPositionArray[i]) {
-                ctx.fillRect(i * 12, cheight - (--capYPositionArray[i]), meterWidth, capHeight);
-            } else {
-                ctx.fillRect(i * 12, cheight - value, meterWidth, capHeight);
-                capYPositionArray[i] = value;
-            };
-            ctx.fillStyle = gradient; //set the filllStyle to gradient for a better look
-            ctx.fillRect(i * 12 /*meterWidth+gap*/ , cheight - value + capHeight, meterWidth, cheight); //the meter
+        let now = Date.now();
+        if ((now - prevTs) > (1000 / FPS)) {
+            prevTs = now;
+
+            if (canvas.height !== (window.innerHeight - CONTROLS_HEIGHT) || canvas.width !== window.innerWidth) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight - CONTROLS_HEIGHT;
+                cwidth = canvas.width;
+                cheight = canvas.height - CAP_HEIGHT;
+                numBars = Math.floor(canvas.width / (BAR_WIDTH + GAP));
+                capYPositionArray = new Array(numBars).fill(0);
+                console.log('canvas.height: ' + canvas.height);
+                console.log('canvas.width: ' + canvas.width);
+            }
+
+            analyser.getByteFrequencyData(data);
+
+            const step = Math.round(data.length / numBars);
+            ctx.clearRect(0, 0, cwidth, cheight);
+            for (let i = 0; i < numBars; i++) {
+                let value = Math.floor(data[i * step] * (cheight / 256));
+
+                ctx.fillStyle = CAP_COLOR;
+                //draw the cap, with transition effect
+                if (value < capYPositionArray[i]) {
+                    ctx.fillRect(i * (BAR_WIDTH + CAP_HEIGHT), cheight - (--capYPositionArray[i]), BAR_WIDTH, CAP_HEIGHT);
+                } else {
+                    ctx.fillRect(i * (BAR_WIDTH + CAP_HEIGHT), cheight - value, BAR_WIDTH, CAP_HEIGHT);
+                    capYPositionArray[i] = value;
+                }
+                ctx.fillStyle = gradient;
+                ctx.fillRect(i * (BAR_WIDTH + CAP_HEIGHT), cheight - value + CAP_HEIGHT, BAR_WIDTH, cheight);
+            }
         }
         requestAnimationFrame(renderFrame);
     }
     renderFrame();
-    // audio.play();
 };
 
 start();

@@ -147,9 +147,12 @@ def player():
 
             url = urlunparse(base_url._replace(path=quote(f'/music/{st.session_state.song}'))) if st.session_state.song else ''
             st_html(f"""<link rel="stylesheet" type="text/css" href="/__static/visualization.css">
-                        <canvas id="canvas"></canvas>
-                        <audio id="player" controls autoplay="true" src="{url}" style="width: 100%;"></audio>
-                        <script src="/__static/visualization.js"></script>""", height=200)
+                        <div id="container">
+                            <canvas id="canvas"></canvas>
+                            <audio id="player" controls src="{url}" autoplay="true" style="width: 100%;"></audio>
+                        </div>
+                        <script src="/__static/visualization.js"></script>
+                        """, height=200)
             c1, c2 = st.columns([2, 1])
             if st.session_state.song:
                 tag = eyed3.load(os.path.join(fs_root, st.session_state.song))
