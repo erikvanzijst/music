@@ -151,7 +151,7 @@ def player():
                             <canvas id="canvas"></canvas>
                             <audio id="player" controls src="{url}" autoplay="true" style="width: 100%;"></audio>
                         </div>
-                        <script src="/__static/visualization.js"></script>
+                        <script type="module" src="/__static/visualization.js"></script>
                         """, height=200)
             c1, c2 = st.columns([2, 1])
             if st.session_state.song:
