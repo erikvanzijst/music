@@ -15,7 +15,7 @@ let start = function() {
     audioSrc.connect(analyser);
     analyser.connect(audioContext.destination);
 
-    var canvas = document.getElementById('canvas');
+    const canvas = document.getElementById('canvas');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight - CONTROLS_HEIGHT;
     let ctx = canvas.getContext('2d');
