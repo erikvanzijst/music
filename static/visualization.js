@@ -80,7 +80,10 @@ let toggle = function () {
         audioSrc.connect(analyser);
         renderFrame();
     }
+    localStorage.setItem('visualization', JSON.stringify(enabled));
 }
 
-toggle();
+if (JSON.parse(localStorage.getItem('visualization')) === true) {
+    toggle();
+}
 console.log('Visualization loaded');
