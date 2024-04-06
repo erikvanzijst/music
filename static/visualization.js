@@ -83,7 +83,7 @@ let toggle = function () {
     localStorage.setItem('visualization', JSON.stringify(enabled));
 }
 
-if (JSON.parse(localStorage.getItem('visualization')) === true) {
+if (JSON.parse(localStorage.getItem('visualization')) !== false) {
     toggle();
 }
 console.log('Visualization loaded');
