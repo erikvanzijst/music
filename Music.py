@@ -195,7 +195,7 @@ def downloader():
             st.session_state.dl_log = ''
             st.session_state.dl_status = ''
             with TemporaryDirectory() as tmpdir:
-                proc = Popen(['yt-dlp', '--extract-audio', '-x', '-o', '%(title)s', dl_url],
+                proc = Popen(['yt-dlp', '--extract-audio', '-x', '-o', '%(title)s', '--audio-format', 'mp3', dl_url],
                              cwd=tmpdir, stdin=PIPE, stdout=PIPE)
                 try:
                     proc.stdin.close()
