@@ -5,11 +5,12 @@ ENV DEBIAN-FRONTEND=noninteractive
 RUN apt-get update -y
 RUN apt-get install --fix-missing -y \
     nginx telnet procps unzip supervisor openssh-client curl less htop ffmpeg sqlite3 gcc python3-dev file
-RUN mkdir -p /app/.streamlit
+
+RUN mkdir -p /app/.streamlit /app/static
 COPY docker/ /
 COPY .streamlit /app/.streamlit
-COPY requirements.txt /app
-COPY Music.py /app
+COPY static /app/static
+COPY requirements.txt Music.py /app/
 
 WORKDIR /app
 RUN pip install -r requirements.txt
