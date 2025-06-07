@@ -2,10 +2,14 @@ version: '3.8'
 services:
   music:
     container_name: music
+    image: registry.home:5000/music
     restart: always
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      - DATABASE_PATH=/app/music.db
+      - MUSIC_PATH=/music
     ports:
       - 8000:8000
     volumes:

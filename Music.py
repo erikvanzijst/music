@@ -1,7 +1,6 @@
 import html
 import os
 import shutil
-import sys
 import sqlite3
 from pathlib import Path
 from subprocess import Popen, PIPE
@@ -16,10 +15,11 @@ from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
 from streamlit.components.v1 import html as st_html
 
-DB = 'music.db'
+DB = os.environ.get('DATABASE_PATH', 'music.db')
+fs_root = os.environ.get('MUSIC_PATH', '/music')
+
 extensions = {'.mp3', '.flac', '.ogg', '.oga', '.mogg', '.opus', '.vox', '.webm', '.m4a', '.wav', '.wma', '.aac', '.aax', '.m4b'}
 st.set_page_config(layout="wide", page_title="🎵 Music", page_icon=':musical_note:')
-fs_root = '.' if not sys.argv[1:] else sys.argv[1]
 base_url = urlparse(st_javascript("await fetch('').then(r => window.parent.location.href)"))._replace(path='')
 ranking_sql = """
     with playcounts as (
