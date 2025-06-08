@@ -1,8 +1,7 @@
-version: '3.8'
 services:
   music:
     container_name: music
-    image: registry.home:5000/music
+    image: registry.home:80/music
     restart: always
     build:
       context: .
