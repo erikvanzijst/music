@@ -15,8 +15,8 @@ from streamlit_javascript import st_javascript
 from streamlit_searchbox import st_searchbox
 from streamlit.components.v1 import html as st_html
 
-DB = os.environ.get('DATABASE_PATH', 'music.db')
-fs_root = os.environ.get('MUSIC_PATH', '/music')
+DB = os.environ.get('DATABASE_PATH', '/data/music.db')
+fs_root = os.environ.get('MUSIC_PATH', '/data/files')
 
 extensions = {'.mp3', '.flac', '.ogg', '.oga', '.mogg', '.opus', '.vox', '.webm', '.m4a', '.wav', '.wma', '.aac', '.aax', '.m4b'}
 st.set_page_config(layout="wide", page_title="🎵 Music", page_icon=':musical_note:')

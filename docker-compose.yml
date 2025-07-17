@@ -7,9 +7,10 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - DATABASE_PATH=/app/music.db
-      - MUSIC_PATH=/music
+      - DATABASE_PATH=/data/db/music.db
+      - MUSIC_PATH=/data/files
     ports:
       - 8000:8000
     volumes:
       - .:/app
+      - ./mp3:/data/files
